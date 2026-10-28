@@ -16,6 +16,7 @@ from scipy.sparse import csr_array
 DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 STATUSES = ["available", "off", "leave", "unavailable"]
 LABELS = {"available": "Home", "off": "Off", "leave": "Leave", "unavailable": "Unavailable"}
+EXCEPTION = "Exception needed"   # label for days someone can't attend but the policy needs them
 TIME_LIMIT_SECONDS = 30      # per solve; the best roster found so far is used after this
 
 
@@ -275,34 +276,66 @@ def diagnose(scores, ids, team_of, allowed, targets, seats, team_days, team_shar
 # 4. One call that does everything (used by the web app)
 # ======================================================================
 def plan_week(employees, status_table, seats, policy_days,
-              team_days=True, team_share=0.75, compare_naive=True):
-    """Prepared tables + settings -> everything the app needs to show."""
+              team_days=True, team_share=0.75, compare_naive=True, flag_shortfalls=True):
+    """
+    Prepared tables + settings -> everything the app needs to show.
+
+    flag_shortfalls: if someone's 'unavailable' days leave them fewer attendable days
+    than the policy requires, roster them on every day they can attend and flag their
+    unavailable days as EXCEPTION, instead of refusing to build any roster.
+    """
     ids = list(employees["employee_id"])
     team_of = list(employees["team"])
     scores = employees[DAYS].to_numpy()
     status = status_table[DAYS].to_numpy()
     allowed = status == "available"
-    targets = office_targets(status, policy_days)
+    targets = office_targets(status, policy_days)       # what the policy requires
 
-    out = {"targets": targets, "problems": None, "naive_clashes": None}
+    shortfall = np.zeros(len(ids), dtype=int)
+    if flag_shortfalls:
+        shortfall = np.maximum(0, targets - allowed.sum(axis=1))
+    plan_targets = targets - shortfall                   # what each person can actually do
 
-    problems = quick_checks(ids, team_of, allowed, targets, seats, team_days, team_share)
-    solved = None if problems else solve_roster(scores, team_of, allowed, targets, seats,
+    out = {"targets": targets, "problems": None, "naive_clashes": None, "shortfalls": []}
+
+    problems = quick_checks(ids, team_of, allowed, plan_targets, seats, team_days, team_share)
+    solved = None if problems else solve_roster(scores, team_of, allowed, plan_targets, seats,
                                                 team_days, team_share)
     if solved is None:
-        out["problems"] = problems or diagnose(scores, ids, team_of, allowed, targets,
+        out["problems"] = problems or diagnose(scores, ids, team_of, allowed, plan_targets,
                                                seats, team_days, team_share)
         return out
 
     roster, satisfaction = solved["roster"], solved["satisfaction"]
-    labelled = pd.DataFrame(
-        [["Office" if roster[p, d] else LABELS[status[p, d]] for d in range(len(DAYS))]
-         for p in range(len(ids))], columns=DAYS)
+    # Flag exactly as many days as each person is short: their most-preferred unavailable days
+    flagged = np.zeros_like(allowed)
+    for p in np.flatnonzero(shortfall):
+        blocked = [d for d in range(len(DAYS)) if status[p, d] == "unavailable"]
+        for d in sorted(blocked, key=lambda d: -scores[p, d])[: shortfall[p]]:
+            flagged[p, d] = True
+
+    def label(p, d):
+        if roster[p, d]:
+            return "Office"
+        if flagged[p, d]:
+            return EXCEPTION
+        return LABELS[status[p, d]]
+
+    labelled = pd.DataFrame([[label(p, d) for d in range(len(DAYS))] for p in range(len(ids))],
+                            columns=DAYS)
     labelled.insert(0, "employee_id", ids)
     labelled.insert(1, "team", team_of)
     labelled.insert(2, "contract", status_table["contract"].to_numpy())
     labelled.insert(3, "office_days", targets)
+    labelled["short_by"] = shortfall
     labelled["satisfaction_%"] = np.round(satisfaction, 1)
+
+    out["shortfalls"] = [
+        {"employee_id": ids[p], "team": team_of[p], "required": int(targets[p]),
+         "can_attend": int(allowed[p].sum()), "short_by": int(shortfall[p]),
+         "days": [DAYS[d] for d in range(len(DAYS)) if flagged[p, d]]}
+        for p in np.flatnonzero(shortfall)
+    ]
 
     out.update({
         "roster": labelled,

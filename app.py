@@ -27,10 +27,11 @@ def load_sample():
 
 
 @st.cache_data(show_spinner=False)
-def run_model(employees, status_table, seats, policy_days, team_days, team_share, compare):
+def run_model(employees, status_table, seats, policy_days, team_days, team_share, compare,
+              flag_exceptions):
     # cached: the same inputs and settings never get solved twice
     return engine.plan_week(employees, status_table, seats, policy_days,
-                            team_days, team_share, compare)
+                            team_days, team_share, compare, flag_exceptions)
 
 
 def template(columns, rows):
@@ -48,7 +49,7 @@ CELL_COLOURS = {
     "Leave": "background-color: #F1E3D3; color: #6B3E0B",
     "Off": "background-color: #EDEDED; color: #555555",
     "Unavailable": "background-color: #EDEDED; color: #555555",
-    "Home": "color: #555555",
+    engine.EXCEPTION: "background-color: #F9D6D5; color: #8A1C17; font-weight: 700",
 }
 
 
@@ -81,6 +82,11 @@ with st.sidebar:
     team_days = st.toggle("Give each team a shared office day", value=True)
     team_share = st.slider("Team day needs this share of the team available", 50, 100, 75, step=5,
                            format="%d%%", disabled=not team_days) / 100
+    flag_exceptions = st.toggle(
+        "Flag individual exceptions instead of stopping", value=True,
+        help="If someone's unavailable days stop them meeting the policy, roster them on every "
+             "day they can attend and flag the gap as 'Exception needed', so they can request "
+             "an exception from their supervisor.")
     compare = st.toggle("Compare with a roster that ignores availability", value=True,
                         help="Doubles the solving time. Switch off for very large teams.")
 
@@ -123,7 +129,7 @@ if n_people > 300:
 
 with st.spinner("Building the best roster..."):
     result = run_model(employees, status_table, int(seats), policy_days,
-                       team_days, team_share, compare)
+                       team_days, team_share, compare, flag_exceptions)
 
 # ---------- No roster possible ----------
 if result["problems"]:
@@ -136,6 +142,21 @@ if result["problems"]:
 if result["timed_out"]:
     st.warning("This is the best roster found within the time limit. It meets every rule, "
                "but a slightly better one may exist.")
+
+shortfalls = result["shortfalls"]
+if shortfalls:
+    st.warning(
+        f"**{len(shortfalls)} employee(s) can't meet the {policy_days}-day policy this week** "
+        f"because of days they've marked unavailable. They're rostered on every day they can "
+        f"attend, and the gap is flagged **{engine.EXCEPTION}** so they can request an "
+        f"exception from their supervisor."
+    )
+    with st.expander("Who needs an exception"):
+        st.dataframe(pd.DataFrame([
+            {"Employee": s["employee_id"], "Team": s["team"], "Required": s["required"],
+             "Can attend": s["can_attend"], "Short by": s["short_by"],
+             "Flagged day(s)": ", ".join(s["days"])} for s in shortfalls]),
+            hide_index=True, width="stretch")
 
 # ---------- Headline numbers ----------
 per_day = result["per_day"]
@@ -160,12 +181,25 @@ tab_roster, tab_days, tab_teams, tab_whatif = st.tabs(
 
 with tab_roster:
     roster = result["roster"]
-    teams = ["All teams"] + sorted(roster["team"].unique())
-    chosen = st.selectbox("Show", teams)
-    shown = roster if chosen == "All teams" else roster[roster["team"] == chosen]
+    views = ["All teams"] + (["Needs exception"] if shortfalls else []) \
+        + sorted(roster["team"].unique())
+    chosen = st.selectbox("Show", views)
+    if chosen == "All teams":
+        shown = roster
+    elif chosen == "Needs exception":
+        shown = roster[roster["short_by"] > 0]
+    else:
+        shown = roster[roster["team"] == chosen]
+    display = shown.rename(columns={"employee_id": "Employee", "team": "Team",
+                                    "contract": "Contract", "office_days": "Office days",
+                                    "short_by": "Short by"})
+    display["Satisfaction %"] = shown["satisfaction_%"].map(
+        lambda v: "away all week" if pd.isna(v) else f"{v:.1f}")
+    display = display.drop(columns="satisfaction_%")
+    if not shortfalls:
+        display = display.drop(columns="Short by")
     st.dataframe(
-        shown.style.map(lambda v: CELL_COLOURS.get(v, ""), subset=DAYS)
-                   .format({"satisfaction_%": "{:.1f}"}, na_rep="away"),
+        display.style.map(lambda v: CELL_COLOURS.get(v, ""), subset=DAYS),
         hide_index=True, width="stretch", height=480,
     )
     st.download_button("Download roster (CSV)", roster.to_csv(index=False).encode(),
@@ -212,7 +246,8 @@ with tab_whatif:
         rows, progress = [], st.progress(0.0)
         total = len(options) * len(policies)
         for i, (policy, s) in enumerate([(p, s) for p in policies for s in options]):
-            out = run_model(employees, status_table, s, policy, team_days, team_share, False)
+            out = run_model(employees, status_table, s, policy, team_days, team_share, False,
+                            flag_exceptions)
             possible = not out["problems"]
             rows.append({"Office days": f"{policy} days/week", "Seats": s,
                          "Average satisfaction": out["average"] if possible else None,

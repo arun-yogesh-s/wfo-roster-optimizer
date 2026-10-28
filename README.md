@@ -6,6 +6,8 @@ It is a rebuild and extension of my MBA capstone at IIM Tiruchirappalli (Best In
 
 **[Try the live app →](https://wfo-roster-optimizer.streamlit.app)** Use the sample data or upload your own spreadsheets, adjust seats and policy, and download the roster.
 
+![Screenshot of the web app](app_screenshot.png)
+
 ## The problem
 
 Given:
@@ -110,6 +112,7 @@ The model now runs as a web app ([live link](https://wfo-roster-optimizer.stream
 - **Results:** headline satisfaction figures, a colour-coded roster filterable by team, daily occupancy against capacity, each team's shared day, and a downloadable CSV.
 - **What-if analysis:** compare satisfaction across a range of seat counts and neighbouring office policies in one click.
 - **Plain-English checks:** uploads are validated (missing columns, scores outside 1 to 5, typos in availability, duplicate IDs), and impossible settings explain what to change.
+- **Exception flagging:** if someone's unavailable days stop them meeting the policy (for example, one fixed commitment under a 5-day policy), the app still builds the roster. It rosters them on every day they can attend and flags the gap as *Exception needed*, so they can request an exception from their supervisor instead of blocking everyone else's roster. Real capacity problems, like too few seats, still stop the roster with an explanation.
 
 **Under the hood:** the model was moved into `roster_engine.py` so the app and scripts share one implementation. Rules are stored as sparse matrices and each solve has a 30-second time limit, so the app handles larger organisations; a 500-person test with leave rosters in under a minute.
 
