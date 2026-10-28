@@ -1,6 +1,9 @@
 employees.csv
+availability.csv
+scenarios.csv
 roster.csv
 roster_v2.csv
 roster_v3.csv
+roster_v4.csv
 __pycache__/
 .DS_Store
