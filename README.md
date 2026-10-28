@@ -70,6 +70,35 @@ It first runs quick arithmetic checks (seat capacity, contradictory rules, teams
 - Under a 3-day policy, adding 5 seats (40 to 45) raises the average from 91.1% to 96.0% and the least-satisfied employee from 81.8% to 85.7%.
 - Under a 2-day policy, the least-satisfied employee stays at 80% beyond 40 seats, so extra desks stop helping.
 
+## Results (v4: leave, part-time staff and unavailable days)
+
+Real weeks are messy. Version 4 reads `availability.csv`, which marks each person's weekdays as `available`, `off` (part-time), `leave` or `unavailable` (working, but can't come in), and adds four rules:
+
+1. **Blocked days:** nobody is rostered on a day they're off, on leave or unavailable.
+2. **Pro-rata targets:** office days scale with days actually worked. Under a 3-day policy, someone working 4 days (part-time or 1 day of leave) comes in 2 days; someone on leave all week comes in 0.
+3. **Smarter team days:** a team's shared day must be one at least 75% of its working members can attend; members who are away that day are excused.
+4. **Named diagnosis:** when no roster is possible, it names the specific person or team responsible.
+
+**Sample week:** 60 employees, 40 seats; 9 part-time, 13 taking leave, 2 with a day they can't come in.
+
+**Why it matters.** The v3 roster, which ignores availability, would book **21 desks for people who won't turn up**: 14 for people on leave, 6 for part-timers on their day off and 1 for someone who said they can't come in.
+
+**With availability built in:**
+- Every rule is met: no one booked on a blocked day, every target exact, no day over capacity.
+- Leave and part-time free up 26 desk-days, so this week runs on as few as **31 seats**, against 36 when availability is ignored.
+- Every team still gets a shared day, with absent members excused (for example, Design on Thursday: 13 of 18 in, 5 away).
+
+**Diagnosis examples:**
+
+```
+- E020 must come in 3 days but can only attend 2 (Wed, Fri). Excuse them from one day
+  or change an 'unavailable' day.
+- Team Design has no day when at least 100% of its 17 working members are available.
+  Lower TEAM_DAY_MIN_SHARE or skip team days this week.
+```
+
+The roster is saved to `roster_v4.csv` with readable labels (Office, Home, Leave, Off, Unavailable) so it can be shared as-is.
+
 Built with Python, pandas and SciPy (HiGHS solver). Runs natively on Windows, Intel Macs and Apple-chip Macs.
 
 ## How to run
@@ -80,16 +109,18 @@ python generate_data.py
 python roster_v1.py
 python roster_v2.py
 python roster_v3.py
+python generate_availability.py
+python roster_v4.py
 ```
 
-Rosters are saved to `roster.csv` (v1), `roster_v2.csv` (v2) and `roster_v3.csv` (v3). Version 3 also saves `scenarios.csv` and `scenarios.png`. Change `SEATS`, `MIN_DAYS` or `MAX_DAYS` at the top of `roster_v1.py` to test other scenarios.
+Rosters are saved to `roster.csv` (v1), `roster_v2.csv` (v2), `roster_v3.csv` (v3) and `roster_v4.csv` (v4). Version 3 also saves `scenarios.csv` and `scenarios.png`. To roster a real week, edit `availability.csv` in Excel and re-run `roster_v4.py`. Change `SEATS`, `MIN_DAYS` or `MAX_DAYS` at the top of `roster_v1.py` to test other scenarios.
 
 ## Roadmap
 
 - [x] v1: core model (seats, attendance, preferences)
 - [x] v2: fairness (lift the least-satisfied person) and team days (teammates share at least one office day)
 - [x] v3: plain-English diagnosis when no roster is possible, and what-if analysis across seat counts and policies
-- [ ] v4: leave, part-time staff and individual unavailable days
+- [x] v4: leave, part-time staff and individual unavailable days
 - [ ] v5: web app (Streamlit) to upload a CSV and download a roster
 
 All data in this repository is randomly generated.
