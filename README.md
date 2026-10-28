@@ -4,6 +4,8 @@ Hybrid work creates a scheduling problem: everyone wants to come in midweek, but
 
 It is a rebuild and extension of my MBA capstone at IIM Tiruchirappalli (Best Industry Project Award, 2023), which was originally built in Excel Solver.
 
+**[Try the live app →](https://wfo-roster-optimizer.streamlit.app)** Use the sample data or upload your own spreadsheets, adjust seats and policy, and download the roster.
+
 ## The problem
 
 Given:
@@ -99,7 +101,19 @@ Real weeks are messy. Version 4 reads `availability.csv`, which marks each perso
 
 The roster is saved to `roster_v4.csv` with readable labels (Office, Home, Leave, Off, Unavailable) so it can be shared as-is.
 
-Built with Python, pandas and SciPy (HiGHS solver). Runs natively on Windows, Intel Macs and Apple-chip Macs.
+## v5: web app
+
+The model now runs as a web app ([live link](https://wfo-roster-optimizer.streamlit.app)), so anyone can use it without installing Python.
+
+- **Data:** try the built-in sample, or upload your own employees and availability CSVs (templates provided in the app).
+- **Settings:** seats, office-day policy, team days and the team-day attendance threshold, all adjustable on screen.
+- **Results:** headline satisfaction figures, a colour-coded roster filterable by team, daily occupancy against capacity, each team's shared day, and a downloadable CSV.
+- **What-if analysis:** compare satisfaction across a range of seat counts and neighbouring office policies in one click.
+- **Plain-English checks:** uploads are validated (missing columns, scores outside 1 to 5, typos in availability, duplicate IDs), and impossible settings explain what to change.
+
+**Under the hood:** the model was moved into `roster_engine.py` so the app and scripts share one implementation. Rules are stored as sparse matrices and each solve has a 30-second time limit, so the app handles larger organisations; a 500-person test with leave rosters in under a minute.
+
+Built with Python, pandas, SciPy (HiGHS solver) and Streamlit. Runs natively on Windows, Intel Macs and Apple-chip Macs.
 
 ## How to run
 
@@ -111,6 +125,7 @@ python roster_v2.py
 python roster_v3.py
 python generate_availability.py
 python roster_v4.py
+streamlit run app.py
 ```
 
 Rosters are saved to `roster.csv` (v1), `roster_v2.csv` (v2), `roster_v3.csv` (v3) and `roster_v4.csv` (v4). Version 3 also saves `scenarios.csv` and `scenarios.png`. To roster a real week, edit `availability.csv` in Excel and re-run `roster_v4.py`. Change `SEATS`, `MIN_DAYS` or `MAX_DAYS` at the top of `roster_v1.py` to test other scenarios.
@@ -121,6 +136,6 @@ Rosters are saved to `roster.csv` (v1), `roster_v2.csv` (v2), `roster_v3.csv` (v
 - [x] v2: fairness (lift the least-satisfied person) and team days (teammates share at least one office day)
 - [x] v3: plain-English diagnosis when no roster is possible, and what-if analysis across seat counts and policies
 - [x] v4: leave, part-time staff and individual unavailable days
-- [ ] v5: web app (Streamlit) to upload a CSV and download a roster
+- [x] v5: web app (Streamlit) to upload a CSV and download a roster
 
 All data in this repository is randomly generated.
